@@ -1,15 +1,14 @@
 param location string = 'japanwest'
 param appName string = 'directiveiq'
 
+@secure()
+param openAiApiKey string
+
 var storageName = toLower('${appName}storage')
 var keyVaultName = toLower('${appName}-kv')
 var workspaceName = toLower('${appName}-log')
 var appServicePlanName = '${appName}-plan'
 
-@secure()
-param openAiApiKey string
-
-// App Service Plan
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   name: appServicePlanName
   location: location
@@ -19,7 +18,6 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   }
 }
 
-// App Insights (optional for detailed logs)
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-06-01' = {
   name: workspaceName
   location: location
@@ -31,7 +29,6 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-06-01' = {
   }
 }
 
-// Azure Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   name: keyVaultName
   location: location
@@ -41,16 +38,14 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
       name: 'standard'
       family: 'A'
     }
-    accessPolicies: [] // You can configure access policies later or use RBAC
     enabledForDeployment: true
     enabledForTemplateDeployment: true
     enabledForDiskEncryption: true
   }
 }
 
-// Store OpenAI API Key in Key Vault
 resource openAiSecret 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
-  name: '${keyVault.name}/OPENAI-API-KEY'
+  name: '${keyVault.name}/AZURE-OPENAI-API-KEY'
   properties: {
     value: openAiApiKey
   }
@@ -59,7 +54,6 @@ resource openAiSecret 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   ]
 }
 
-// Azure Storage Account
 resource storage 'Microsoft.Storage/storageAccounts@2022-09-01' = {
   name: storageName
   location: location
@@ -72,32 +66,39 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-09-01' = {
   }
 }
 
-// Web App (Linux, Python 3.11)
 resource webApp 'Microsoft.Web/sites@2022-03-01' = {
   name: appName
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: appServicePlan.id
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.11'
       appSettings: [
         {
-          name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE'
-          value: 'false'
-        }
-        {
-          name: 'OPENAI_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${openAiSecret.properties.secretUriWithVersion})'
-        }
-        {
           name: 'ENV'
           value: 'production'
         }
+        {
+          name: 'AZURE_OPENAI_API_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${openAiSecret.properties.secretUriWithVersion})'
+        }
+        {
+          name: 'AZURE_OPENAI_ENDPOINT'
+          value: 'https://your-resource-name.openai.azure.com/'  // Replace with your actual endpoint
+        }
+        {
+          name: 'AZURE_OPENAI_DEPLOYMENT'
+          value: 'gpt-4-deployment'  // Replace with your actual deployment name
+        }
+        {
+          name: 'AZURE_OPENAI_VERSION'
+          value: '2023-07-01-preview'
+        }
       ]
     }
-  }
-  identity: {
-    type: 'SystemAssigned'
   }
   dependsOn: [
     openAiSecret
